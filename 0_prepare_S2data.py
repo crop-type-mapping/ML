@@ -12,6 +12,8 @@
 # 2. Activate the environment and install Jupyter notebooks `pip3 install --user ipykernel` and check if installed by running `which jupyter`,
 # 3. Associate the notebook with your environment `python -m ipykernel install --user --name=crops-env`.
 # 4. Install necessary packages (amongs others), e.g.`conda install -c conda-forge google-colab`, `conda install geemap -c conda-forge`, `conda install -c conda-forge matplotlib`, `conda install -c conda-forge earthengine-api` and `conda install --channel conda-forge geopandas`. Then set-up a service account for GEE cloud service account.
+
+#XXXXXXXNOTE Working code for S2 see: https://code.earthengine.google.com/de4014937460b1486a053f849901f9f5
 import os
 import ee
 import json

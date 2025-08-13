@@ -58,7 +58,7 @@ rawpath = '/cluster01/Projects/USA_IDA_AICCRA/1.Data/RAW/'
 interimpath = '/cluster01/Projects/USA_IDA_AICCRA/1.Data/Process/'
 finalpath = '/cluster01/Projects/USA_IDA_AICCRA/1.Data/FINAL/images/'
 sResolution = 10 
-sensor = "S1" #S1_Comp_Nyagatare_2019_B_v1
+sensor = "S1" #S2_Multitemp_B2025
 season ='B'
 eyear  = '2025';
 version = 'v1'
@@ -67,11 +67,11 @@ cList = ['Nyagatare']
 roi = ee.FeatureCollection('users/bensonkemboi/CIAT/Rwanda/rwa_adm2_selected_districts')
 roi = roi.filter(ee.Filter.inList('ADM2_EN', cList))
 
-filename = f"{sensor}_Comp_Nyagatare_{eyear}_{season}_{version}"#'s1_composite_'+eyear+'_'+season+'_'+{version} 
+filename = f"{sensor}_Multitemp_{season}{eyear}"#'s1_composite_'+eyear+'_'+season+'_'+{version} 
 temp   = f"{filename}_image_chunk"
 output_merged_file = os.path.join(finalpath, f"{filename}_mosaic.tif")
-tile_width = 0.08#0.065  
-tile_height =  0.08 #0.065
+tile_width = 0.04#0.065  
+tile_height =  0.04 #0.065
 no_datan = -9999
 print("Global variables initialized succefully!")
 
@@ -80,7 +80,7 @@ s1_composite_asset_id = f"{gee_project}/assets/{asset_folder}/{filename}"
 
 s1_composite = ee.Image(s1_composite_asset_id) # load from asssets
 print(s1_composite.bandNames().getInfo())
-print('Successfully loaded ', s1_composite_asset_id)
+print('Successfully loaded ', s1_composite_asset_id, flush=True)
 
 def create_grid(roi, tile_width, tile_height):
     """
@@ -107,7 +107,7 @@ def create_grid(roi, tile_width, tile_height):
 
  
 tiles = create_grid(roi, tile_width, tile_height)
-print(f"Created {len(tiles)} tiles.")
+print(f"Created {len(tiles)} tiles.", flush=True)
 
 # ### Export tiles to file
 

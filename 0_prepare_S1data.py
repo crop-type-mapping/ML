@@ -54,7 +54,7 @@ timeField = 'system:time_start'
 sResolution = 10
 season = 'B'
 version = 'v1'
-filename = f'S1_Multitemp_{eyear}_{season}_{version}'
+filename = f'S1_Multitemp_{season}{eyear}'
 gee_project = "projects/cropmapping-365811"
 asset_folder = "rwanda"
 s1_asset_id = f"{gee_project}/assets/{asset_folder}/{filename}"
@@ -66,17 +66,9 @@ ROI = ee.FeatureCollection('users/bensonkemboi/CIAT/Rwanda/rwa_adm2_selected_dis
 ROI = ROI.filter(ee.Filter.inList('ADM2_EN', cList))
 Map = geemap.Map(center=[-1.94, 29.87], zoom=8)
 Map.addLayer(ROI, {}, 'ROI')
-# ============================================
-# Load Mask 
-# ============================================
-# Load ESA WorldCover (v200 - 2020 or latest available)
-esa_landcover = ee.ImageCollection("ESA/WorldCover/v200").first()
-# Select the 'Map' band and create mask for class values: 90 (Cropland), 40 (Wetland)
-cropland = esa_landcover.select('Map').eq(90)
-wetland = esa_landcover.select('Map').eq(40)
-# Combine and apply mask
-datamask = cropland.Or(wetland).selfMask().rename('cropland')
-
+monthly_dates = ee.List.sequence(0, end.difference(start, 'month')) \
+    .map(lambda m: start.advance(m, 'month').format('YYYY-MM-dd'))
+print('Monthly dates ', monthly_dates.getInfo(), flush=True)
 # ============================================
 # Sentinel-1 images
 # ============================================
@@ -86,6 +78,16 @@ s1Base = ee.ImageCollection('COPERNICUS/S1_GRD') \
     .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH')) \
     .filter(ee.Filter.eq('instrumentMode', 'IW')) \
     .filter(ee.Filter.notNull(['system:time_start']))
+
+def get_dates_and_doy(image):
+    date = ee.Date(image.get('system:time_start'))
+    doy = date.getRelative('day', 'year').add(1)
+    formatted_date = date.format('YYYY-MM-dd')
+    return ee.Feature(None, {'Date': formatted_date, 'DOY': doy})
+sdates = s1Base.map(get_dates_and_doy)
+# Extracting the list of features from the dictionary
+image_dates_info = sdates.getInfo()
+print("Image acquisition dates ", image_dates_info, flush=True)
 # ============================================
 # CHIRPS & ERA5
 # ============================================
@@ -119,57 +121,40 @@ def toGamma0(img):
 def addRadarIndices(img):
     vv = img.select('VV')
     vh = img.select('VH')
-    rvi = img.expression('(4 * VH) / (VV + VH)', {'VV': vv, 'VH': vh})
-    cri = img.expression('VV / VH', {'VV': vv, 'VH': vh})
-    mrvi = img.expression('((VV / (VV + VH)) ** 0.5) * ((4 * VH) / (VV + VH))', {'VV': vv, 'VH': vh})
-    mrfdi = img.expression('(VV - VH) / (VV + VH)', {'VV': vv, 'VH': vh})
-    indices = ee.Image.cat([cri, mrfdi, mrvi, rvi]).rename(['cri', 'mrfdi', 'mrvi', 'rvi'])
+    #rvi = img.expression('(4 * VH) / (VV + VH)', {'VV': vv, 'VH': vh})
+    cri = img.expression('VV / VH', {'VV': vv, 'VH': vh}) #CRI1: Cross ratio VV/VH: https://doi.org/10.3390/rs10122049
+    mrvi = img.expression('((VV / (VV + VH)) ** 0.5) * ((4 * VH) / (VV + VH))', {'VV': vv, 'VH': vh}) #Modified Radar Vegetation Index (MRVI): https://isprs-archives.copernicus.org/articles/XLIII-B3-2021/701/2021/isprs-archives-XLIII-B3-2021-701-2021.pdf
+    mrfdi = img.expression('(VV - VH) / (VV + VH)', {'VV': vv, 'VH': vh}) #Modified Radar Forest Degradation Index  (mRFDI): https://isprs-archives.copernicus.org/articles/XLIII-B3-2021/701/2021/isprs-archives-XLIII-B3-2021-701-2021.pdf
+    indices = ee.Image.cat([cri, mrfdi, mrvi]).rename(['cri', 'mrfdi', 'mrvi'])
     return img.addBands(indices.float())
 
 def addVariables(img):
     years = ee.Date(img.get('system:time_start')).difference(ee.Date('2017-01-01'), 'year')
     return img.addBands(ee.Image(years).rename('t').float()) \
-              .addBands(ee.Image.constant(1)) \
-              .updateMask(datamask)
+              .addBands(ee.Image.constant(1)) 
 # ============================================
 # Generate Monthly Composites
 # ============================================
 def get_monthly_composites(start, end):
-    months = ee.List.sequence(0, end.difference(start, 'month').subtract(1))
+    months = ee.List.sequence(0, end.difference(start, 'month'))#ee.List.sequence(0, end.difference(start, 'month').subtract(1))
     def monthly_fn(m):
         m = ee.Number(m)
         month_start = start.advance(m, 'month')
         month_end = month_start.advance(1, 'month')
         s1_monthly = s1Base.filterDate(month_start, month_end) \
-            .map(addVariables).map(maskBorderNoise).map(lambda img: img.updateMask(datamask)) \
+            .map(addVariables).map(maskBorderNoise) \
             .map(refinedLee).map(toGamma0).map(addRadarIndices)
         s1_comp = s1_monthly.median()
         s1_proj = s1_comp.select('VV').projection()
-        '''
-        rain = chirps.filterDate(month_start, month_end).select('precipitation').sum() \
-            .reproject(crs=s1_proj.crs(), scale=sResolution).resample('bilinear').rename('ch_rain')
-        evap = era5.select('total_evaporation_sum').mean() \
-            .reproject(crs=s1_proj.crs(), scale=1000).resample('bilinear').rename('era_evap')
-        temp = era5.select('temperature_2m').mean().subtract(273.15) \
-            .reproject(crs=s1_proj.crs(), scale=1000).resample('bilinear').rename('era_t2m')
-        '''
 
-        combined = s1_comp.select(['VV', 'VH', 'cri', 'mrfdi', 'rvi']) \
+        combined = s1_comp.select(['VV', 'VH', 'cri', 'mrfdi', 'mrvi']) \
             .set({
                 'month': month_start.get('month'),
                 'year': month_start.get('year'),
                 'month_id': month_start.format('YYYY_MM'),
                 'system:time_start': month_start.millis()
             })
-
-        s1_obia = ee.Algorithms.Image.Segmentation.SNIC(
-            combined.clip(ROI),  # image
-            30,                  # size
-            0.1,                 # compactness
-            8,                   # connectivity
-        ).select('clusters').rename('s1_obia')
-
-        return combined.addBands(s1_obia).updateMask(datamask)
+        return combined
 
     return months.map(monthly_fn)
 
@@ -179,12 +164,19 @@ first_image = monthlyComposites.first()
 band_names = first_image.bandNames().getInfo()
 print('Monthly composites (S1):', band_names)
 
+#Add OBIA Band
+s1_obia = ee.Algorithms.Image.Segmentation.SNIC(
+    monthlyComposites.median().clip(ROI),  # image
+    30,                  # size
+    0.1,                 # compactness
+    8,                   # connectivity
+).select('clusters').rename('s1_obia')
 
 # Visualize first month
 Map = geemap.Map()
 Map.centerObject(ROI, 8)
 Map.addLayer(monthlyComposites.first().clip(ROI),
-             {'bands': ['VV', 'VH', 'rvi'], 'min': [-0.25, -0.25, -1], 'max': [5, 5, 1]},
+             {'bands': ['VV', 'VH', 'mrvi'], 'min': [-0.25, -0.25, -1], 'max': [5, 5, 1]},
              'First Monthly Composite')
 Map
 # ============================================
@@ -228,16 +220,16 @@ for i in range(1, nMonths):
     renamed = img.rename(bandNames.map(lambda b: ee.String(b).cat(f'_{index}')))
     bandStack = bandStack.addBands(renamed)
 
-
+bandStack = bandStack.addBands(s1_obia) # add s1_OBIA
 # Define the Asset ID path
 s1_asset_id = f"{gee_project}/assets/{asset_folder}/{filename}"
 
 # Delete existing asset if exists (overwrite support)
 try:
     ee.data.deleteAsset(s1_asset_id)
-    print("ℹ️ Existing asset deleted to allow overwrite.")
+    print("Existing asset deleted to allow overwrite.")
 except Exception as e:
-    print("✅ No existing asset to delete (safe to proceed).")
+    print("No existing asset to delete (safe to proceed).")
 
 # Define Export Task
 export_task = ee.batch.Export.image.toAsset(

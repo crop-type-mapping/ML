@@ -116,7 +116,7 @@ train_fc = ee.FeatureCollection(features)
 code_counts = train_fc.aggregate_histogram('code').getInfo()
 
 # Display the counts
-print("🧮 Label distribution in train_fc:")
+print("Label distribution in train_fc:")
 for label, count in sorted(code_counts.items()):
     print(f"  Class {label}: {count} points")
 # ============================================
@@ -400,9 +400,9 @@ print('Created labels successfully, i.e.:\n', y_train.head(n=3))
 
 #============================== Model Training ==============================#
 warnings.filterwarnings("ignore")
-# ✅ Random Forest
+#Random Forest
 rf_model = RandomForestClassifier(n_estimators=ntrees, n_jobs=n_cores, random_state=123)
-# ✅ XGBoost
+# XGBoost
 xg_model = XGBClassifier(n_estimators=ntrees, eval_metric='mlogloss', random_state=123, n_jobs=-n_cores)
 #stacked_model.fit(X_train, y_train)
 rf_model.fit(X_train, y_train)
@@ -420,7 +420,7 @@ print('Feature importance: ',importance_df)
 csv_path = os.path.join(resultspath, f"{filename}_RF_importance.csv")
 # Save to CSV
 importance_df.to_csv(csv_path, index=False)
-print(f"✅ Random Forest feature importances saved to {csv_path}")
+print(f"Random Forest feature importances saved to {csv_path}")
 
 #Export plot 
 
@@ -449,7 +449,7 @@ plt.gca().invert_yaxis()
 # 💾 Save to disk before displaying
 plt.savefig(plot_path, dpi=300, bbox_inches='tight')
 plt.show()
-print(f"✅ Feature importance plot saved to: {plot_path}")
+print(f"Feature importance plot saved to: {plot_path}")
 
 #========Save trained model ===================#
 modelfolder = os.path.join(finalpath, 'models')
